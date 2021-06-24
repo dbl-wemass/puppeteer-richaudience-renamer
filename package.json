@@ -21,7 +21,9 @@
     "url": "https://github.com/dbl-wemass/puppeteer-richaudience-renamer/issues"
   },
   "homepage": "https://github.com/dbl-wemass/puppeteer-richaudience-renamer#readme",
-  "devDependencies": {},
+  "devDependencies": {
+    "node-html-parser": "^3.3.6"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

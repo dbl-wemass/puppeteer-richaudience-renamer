@@ -1,3 +1,6 @@
+const {
+  parse
+} = require('node-html-parser');
 class wemassPuppeteer {
   page;
   browser;
@@ -9,29 +12,68 @@ class wemassPuppeteer {
   async w(waitFor = 500) {
     return new Promise(resolve => setTimeout(resolve, waitFor))
   }
-  async getProps () {
-    let output = [];
-    for (let item of allitems) {
-      const attr = await this.page.evaluate(el => {
-        return {
-          "title": el.getAttribute("title"),
-          "href": el.getAttribute("href")
-        }
-      }, item);
-      output.push(attr);
+  async getProps(type, allitems) {
+    let output = [],
+      {
+        recordsFiltered,
+        recordsTotal,
+        data = []
+      } = allitems;
+    console.log(`parseando ${recordsFiltered} de ${recordsTotal}`);
+    for (let item of data) {
+      const {
+        //*comunes
+        NAME = "",
+          HASH: hash,
+          //*solo placements
+          PREBID,
+          TYPE_NAME,
+          //!site y placements
+          ID_STATUS,
+          //*solo sites
+          URL,
+      } = item;
+      let
+        domElement = parse(NAME),
+        object = {
+          hash
+        };
+      switch (type) {
+        case "certification":
+          object.name = domElement.querySelector("a").getAttribute("title");
+          object.domain = domElement.querySelector("i").textContent.trim();
+          break;
+        case "placement":
+          object.name = domElement.querySelector("a").getAttribute("title");
+          object.domain = domElement.querySelector("i").textContent.trim();
+          object.prebid = PREBID;
+          domElement = parse(TYPE_NAME);
+          [object.format, object.subformats] = domElement.textContent.trim().split("\n");
+          object.subformats = object.subformats.trim().split(", ");
+          domElement = parse(ID_STATUS);
+          object.status = domElement.textContent.trim();
+          break;
+        case "site":
+          domElement = parse(URL);
+          object.name = domElement.textContent.trim();
+          domElement = parse(ID_STATUS);
+          object.status = domElement.textContent.trim();
+          break
+      }
+      output.push(object);
     }
     return output;
   }
   async init() {
+    console.log("innit")
     const
       puppeteer = require("puppeteer"),
-      login = require("./login.js"),
       {
         startX,
         stopX
       } = require("./util/windows"),
       {
-        esWSL = false,
+        esWSL = true,
         USER_DATA_DIR = './temp/pupuserdata',
         browserOptions = {
           args: ['--no-sandbox', '--disable-setuid-sandbox', '--ignore-certificate-errors', "--window-size=1280,1024"],
@@ -58,10 +100,11 @@ class wemassPuppeteer {
       // });
       await this.login();
     } catch (e) {
-
+      console.log(e);
     }
   }
   async login(processData = {}) {
+    console.log("logando")
     return new Promise(async (resolve, reject) => {
       try {
         //   page
@@ -120,10 +163,12 @@ class wemassPuppeteer {
     await this.page.click(selectSelctor);
     await this.page.waitForSelector(showAllSelector);
     await this.page.click(showAllSelector);
-    await this.page.waitForResponse(
-      (response) =>
-      response.url().indexOf('https://platform.richaudience.com/certification/datatable') === 0 && response.status() === 200
-    );
+    let response = await this.page.waitForResponse(
+        (response) =>
+        /^https:\/\/platform\.richaudience\.com.*datatable/i.test(response.url()) && response.status() === 200
+      ),
+      responseData = await response.json();
+    return responseData;
     //await this.page.waitForFunction(waiting.toString());
   }
   async get(que, quien) {
@@ -135,28 +180,32 @@ class wemassPuppeteer {
           extraUrl: "view/_HASH_"
         },
         getAll: async () => {
-          await this.showAll("certification-datatable");
+          let allitems = await this.showAll("certification-datatable");
 
-          let allitems = await this.page.$$("#certification-datatable div>a.lnkEditDatatable");
-          return this.getProps(allitems);
+          //let allitems = await this.page.$$("#certification-datatable div>a.lnkEditDatatable");
+          return await this.getProps(que, allitems);
         }
       },
       placement: {
         base: "https://platform.richaudience.com/placements",
         get: "update//_HASH_",
         edit: "update//_HASH_",
-        
-        getAll: async () => {
-          await this.showAll("placement-datatable");
 
-          let allitems = await this.page.$$("#placement-datatable div>a.lnkEditDatatable");
-          return this.getProps(allitems);
+        getAll: async () => {
+          let allitems = await this.showAll("placement-datatable");
+          //let allitems = await this.page.$$("#placement-datatable>tbody>tr[role='row']");
+          return await this.getProps(que, allitems);
         }
       },
       site: {
         base: "https://platform.richaudience.com/sites",
         get: "update/_HASH_",
-        edit: ""
+        edit: "",
+        getAll: async () => {
+          let allitems = await this.showAll("sites-datatable");
+          //let allitems = await this.page.$$("#placement-datatable>tbody>tr[role='row']");
+          return await this.getProps(que, allitems);
+        }
       }
     };
     if (diccionario[que]) {
